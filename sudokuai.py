@@ -29,3 +29,34 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         while True:
             time.sleep(0.2)
             self.propose_move(random.choice(all_moves))
+
+def get_move_score(move: Move, board: SudokuBoard) -> int:
+    new_regions_completed = 0
+    board.put(move.i, move.j, move.value)
+
+    # check if a column is completed
+    for j in range(board.N):
+        if board.get(j, move.i) is None:
+            new_regions_completed += 1
+            break
+
+    # check if a row is completed
+    for i in range(board.N):
+        if board.get(move.j, i) is None:
+            new_regions_completed += 1
+            break
+
+    # check if a block is completed
+    # TODO!
+
+    score = 0
+    if new_regions_completed is 0:
+        score = 0
+    if new_regions_completed is 1:
+        score = 1
+    if new_regions_completed is 2:
+        score = 3
+    if new_regions_completed is 3:
+        score = 7
+
+    return score

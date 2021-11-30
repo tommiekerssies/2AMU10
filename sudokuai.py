@@ -85,16 +85,17 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                      for value in range(1, self.N + 1)
                      if possible(i, j, value, game_state)]
 
-        most_common_numbers = Counter(game_state.board.squares).most_common()
-        for item in groupby(all_moves, lambda x: x[1]):
-
-            occ = [(index,pos_move[0].value) for index, pos_move in enumerate(item[1])]
-            occ = list(zip(*occ))
-            for number in most_common_numbers:
-                if number[0] in occ[1]:
-                    [occ[0] for num in occ if number[0]==num[1]]
-
-
+        #most_common_numbers = Counter(game_state.board.squares).most_common()
+        most_common_numbers = Counter(game_state.board.squares)
+        new_moveset = []
+        for group in groupby(all_moves, lambda x: x[1]):
+            moveset = list(group[1])
+            candidate = moveset[0]
+            for move in moveset:
+                if most_common_numbers[move[0].value]>most_common_numbers[candidate[0].value]:
+                    candidate = move
+            new_moveset.append(candidate)
+        all_moves = new_moveset
         def calcmove(indice, prev_score, calcsquares, calcname):
             nsquares = calcsquares.copy()
             nsquares[indice] = -1

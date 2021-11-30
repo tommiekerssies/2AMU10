@@ -6,6 +6,7 @@ from math import isqrt, floor
 from operator import itemgetter
 from copy import deepcopy
 
+
 class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
     """
     Sudoku AI that computes a move for a given sudoku configuration.
@@ -37,7 +38,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         possible moves stored in the row, column and block.
         """
 
-        #list of possible moves
+        # list of possible moves
         rows = {i: list(range(1, (self.N + 1))) for i in range(self.N)}
         cols = {i: list(range(1, (self.N + 1))) for i in range(self.N)}
         blocks = {i: list(range(1, (self.N + 1))) for i in range(self.N)}
@@ -70,7 +71,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         # find all legal moves (according to sudoku rules)
         legal_moves = self.find_legal_moves(board=game_state.board)
 
-        def possible( i, j, value, game_state):
+        def possible(i, j, value, game_state):
             # find only moves for empty squares and non-taboo, legal moves.
             return game_state.board.get(i, j) == SudokuBoard.empty and not\
                 TabooMove(i, j, value) in game_state.taboo_moves and \
@@ -87,41 +88,39 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
             nsquares[indice] = -1
             score = self.countfilled(nsquares)
             scorediff = score - prev_score
-
+            print(score, prev_score)
             # find children
             indices = [i for i, j in enumerate(nsquares) if j == 0]
             ccountr = 0
-            children = []
+            calc_children = []
             for indice in indices:
                 cname = calcname + [ccountr]
                 ccountr += 1
-                children.append({'move': indice, 'name': cname})
+                calc_children.append({'move': indice, 'name': cname})
 
-            return nsquares, self.scoremap[scorediff], score, children
+            return nsquares, self.scoremap[scorediff], score, calc_children
 
         initial_score = self.countfilled(game_state.board.squares)
 
         def get_candidate_node(tag, move):
             name = [f'p{tag}']
-            squares, points, score, children = calcmove(move[1],
-                                                        initial_score,
-                                                        game_state.board.squares,
-                                                        name)
+            squares, points, score, can_children = calcmove(move[1], initial_score, game_state.board.squares, name)
             return {'name': name, 'move': move[0], 'squares': squares, 'eval': points, 'score': score,
-                    'children': children}
+                    'children': can_children}
 
-        tree = [get_candidate_node(nr,move) for nr, move in enumerate(all_moves)]
+        tree = [get_candidate_node(nr, move) for nr, move in enumerate(all_moves)]
 
         # get best candidate for depth=1:
-        self.propose_move(max(tree, key=lambda x:x['eval'])['move'])
+        proposed_move = max(tree, key=lambda x: x['eval']).copy()
+        self.propose_move(proposed_move['move'])
 
         def get_general_node(child):
             child_squares, child_points, child_score, child_children = \
-                calcmove(child['move'], parent['score'],parent['squares'],child['name'])
+                calcmove(child['move'], parent['score'], parent['squares'], child['name'])
 
             # the eval is the points lead gained by player, for even moves opponent moves
             # so point gain is negative.
-            if len(child['name'])%2 == 0:
+            if len(child['name']) % 2 == 0:
                 child_eval = parent['eval'] - child_points
             else:
                 child_eval = parent['eval'] + child_points
@@ -138,10 +137,10 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         while True:
             depth += 1
             print(f'search depth:{depth}')
-            if depth>self.N2:
+            if depth > self.N2:
                 break
             for parent in moves:
-                if len(parent['children'])>0:
+                if len(parent['children']) > 0:
                     children = [get_general_node(child) for child in parent['children']]
                     child_nodes = list(zip(*children))[0]
                     insertion_pos = next(x for x in tree if x['name'][0] == parent['name'][0])
@@ -149,31 +148,33 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                         insertion_pos = insertion_pos['eval'][nesting]
                     insertion_pos['eval'] = child_nodes
 
-
-
-                    # back propagation
-
+                    ####################
+                    # back propagation #
+                    ####################
                     backcopy = deepcopy(tree)
 
                     def dig(movetree):
-                        if type(movetree) == int:
-                            return movetree
-                        elif type(movetree['eval']) != int:
+                        if type(movetree['eval']) != int:
                             if len(movetree['name']) % 2 == 0:
-                                return max([dig(subtree) for subtree in movetree['eval']])
+                                sub = [dig(subtree) for subtree in movetree['eval']]
+                                #print(sub)
+                                return max(sub)
                             else:
-                                return min([dig(subtree) for subtree in movetree['eval']])
+                                sub = [dig(subtree) for subtree in movetree['eval']]
+                                #print(sub)
+                                return min(sub)
                         else:
                             return movetree['eval']
 
                     for move in backcopy:
                         move['eval'] = dig(move)
+                        if move['eval'] > proposed_move['eval']:
+                            proposed_move = move
+                            print(f'move:{proposed_move["move"]} and evaluation: {proposed_move["eval"]}')
+                            self.propose_move(move['move'])
 
-                    bestmove = max(backcopy, key=lambda x: x['eval'])
-                    print(f'move:{bestmove["move"]} and evaluation: {bestmove["eval"]}')
-                    self.propose_move(bestmove['move'])
+                    #bestmove = max(backcopy, key=lambda x: x['eval'])
+                    #print(f'move:{bestmove["move"]} and evaluation: {bestmove["eval"]}')
+                    #self.propose_move(bestmove['move'])
                     # assigning a new depth layer for the moves
                     moves = list(zip(*children))[1]
-
-
-

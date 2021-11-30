@@ -2,9 +2,11 @@ import random
 import time
 from competitive_sudoku.sudoku import GameState, Move, SudokuBoard, TabooMove
 import competitive_sudoku.sudokuai
-from math import isqrt, floor
+from math import isqrt
 from operator import itemgetter
 from copy import deepcopy
+from collections import Counter
+from itertools import groupby
 
 
 class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
@@ -83,12 +85,21 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                      for value in range(1, self.N + 1)
                      if possible(i, j, value, game_state)]
 
+        most_common_numbers = Counter(game_state.board.squares).most_common()
+        for item in groupby(all_moves, lambda x: x[1]):
+
+            occ = [(index,pos_move[0].value) for index, pos_move in enumerate(item[1])]
+            occ = list(zip(*occ))
+            for number in most_common_numbers:
+                if number[0] in occ[1]:
+                    [occ[0] for num in occ if number[0]==num[1]]
+
+
         def calcmove(indice, prev_score, calcsquares, calcname):
             nsquares = calcsquares.copy()
             nsquares[indice] = -1
             score = self.countfilled(nsquares)
             scorediff = score - prev_score
-            print(score, prev_score)
             # find children
             indices = [i for i, j in enumerate(nsquares) if j == 0]
             ccountr = 0
@@ -136,6 +147,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         depth = 0
         while True:
             depth += 1
+            proposed_move['eval'] = float('-inf')
             print(f'search depth:{depth}')
             if depth > self.N2:
                 break
@@ -147,7 +159,6 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                     for nesting in parent['name'][1:]:
                         insertion_pos = insertion_pos['eval'][nesting]
                     insertion_pos['eval'] = child_nodes
-
                     ####################
                     # back propagation #
                     ####################

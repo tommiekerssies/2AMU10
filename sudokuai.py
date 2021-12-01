@@ -1,5 +1,7 @@
 import random
 import time
+
+import simulate_game
 from competitive_sudoku.sudoku import GameState, Move, SudokuBoard, TabooMove
 import competitive_sudoku.sudokuai
 from math import isqrt
@@ -85,7 +87,6 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                      for value in range(1, self.N + 1)
                      if possible(i, j, value, game_state)]
 
-        #most_common_numbers = Counter(game_state.board.squares).most_common()
         most_common_numbers = Counter(game_state.board.squares)
         new_moveset = []
         for group in groupby(all_moves, lambda x: x[1]):
@@ -117,7 +118,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         def get_candidate_node(tag, move):
             name = [f'p{tag}']
             squares, points, score, can_children = calcmove(move[1], initial_score, game_state.board.squares, name)
-            return {'name': name, 'move': move[0], 'squares': squares, 'eval': points, 'score': score,
+            return {'name': name, 'move': move[0], 'squares': squares, 'eval': points, 'tally': points, 'score': score,
                     'children': can_children}
 
         tree = [get_candidate_node(nr, move) for nr, move in enumerate(all_moves)]
@@ -133,14 +134,15 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
             # the eval is the points lead gained by player, for even moves opponent moves
             # so point gain is negative.
             if len(child['name']) % 2 == 0:
-                child_eval = parent['eval'] - child_points
+                child_eval = parent['tally'] - child_points
             else:
-                child_eval = parent['eval'] + child_points
+                child_eval = parent['tally'] + child_points
             as_node = {'name': child['name'], 'eval': child_eval}
             as_move = {'name': child['name'],
                        'squares': child_squares,
                        'score': child_score,
                        'children': child_children,
+                       'tally': child_eval,
                        'eval': child_eval}
             return as_node, as_move
 
@@ -152,11 +154,16 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
             print(f'search depth:{depth}')
             if depth > self.N2:
                 break
+            allchildren = []
             for parent in moves:
                 if len(parent['children']) > 0:
                     children = [get_general_node(child) for child in parent['children']]
                     child_nodes = list(zip(*children))[0]
+                    child_moves = list(zip(*children))[1]
+
+                    allchildren = allchildren+list(child_moves)
                     insertion_pos = next(x for x in tree if x['name'][0] == parent['name'][0])
+
                     for nesting in parent['name'][1:]:
                         insertion_pos = insertion_pos['eval'][nesting]
                     insertion_pos['eval'] = child_nodes
@@ -167,13 +174,15 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
 
                     def dig(movetree):
                         if type(movetree['eval']) != int:
+
                             if len(movetree['name']) % 2 == 0:
                                 sub = [dig(subtree) for subtree in movetree['eval']]
-                                #print(sub)
+
+
                                 return max(sub)
                             else:
                                 sub = [dig(subtree) for subtree in movetree['eval']]
-                                #print(sub)
+
                                 return min(sub)
                         else:
                             return movetree['eval']
@@ -185,8 +194,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                             print(f'move:{proposed_move["move"]} and evaluation: {proposed_move["eval"]}')
                             self.propose_move(move['move'])
 
-                    #bestmove = max(backcopy, key=lambda x: x['eval'])
-                    #print(f'move:{bestmove["move"]} and evaluation: {bestmove["eval"]}')
-                    #self.propose_move(bestmove['move'])
-                    # assigning a new depth layer for the moves
-                    moves = list(zip(*children))[1]
+            moves = allchildren
+
+
+

@@ -256,20 +256,20 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
 
             # perform minimax on the tree where if the node is a leaf the 'eval' is an integer representing the point
             # gain for the player since the root node, and otherwise the 'eval' is a list of the children of this node.
-            def dig(movetree):
+            def minimax(movetree):
                 if type(movetree['eval']) != int:
                     # same trick as before, since the name represents the position the length represents the depth, the
                     # polarity therefore represents whether it is a minimizing or maximizing layer.
                     if len(movetree['name']) % 2 == 0:
-                        return max([dig(subtree) for subtree in movetree['eval']])
+                        return max([minimax(subtree) for subtree in movetree['eval']])
                     else:
-                        return min([dig(subtree) for subtree in movetree['eval']])
+                        return min([minimax(subtree) for subtree in movetree['eval']])
                 else:
                     return movetree['eval']
 
             for move in backcopy:
                 # evaluate all possible moves and find the best one.
-                move['eval'] = dig(move)
+                move['eval'] = minimax(move)
                 if move['eval'] > proposed_move['eval']:
                     proposed_move = move
                     print(f'move:{proposed_move["move"]} and evaluation: {proposed_move["eval"]}')

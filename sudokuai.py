@@ -37,12 +37,11 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         col_split = [itemgetter(*[(self.N * i) + j for i in range(self.N)])(squares) for j in range(self.N)]
 
         # split the data into groups representing blocks
-        multfac = int(self.N2 / self.rootn)
-        indices_block = [self.N * (i // self.rootn % self.N) + i % self.rootn + i // multfac * self.rootn
-                         for i in range(self.N2)]
+        indices_block = [self.N * (j // self.n) + j % self.n + (i * self.n) % self.N + (i // self.m) * self.N * self.m
+                         for i in range(self.N) for j in range(self.N)]
+
         split_indices_block = [indices_block[x:x + self.N] for x in range(0, len(indices_block), self.N)]
         block_split = [itemgetter(*index)(squares) for index in split_indices_block]
-
         # count all the empty values for each group in the rows, columns and blocks, then take the total of the three.
         return sum([[sublist.count(0) for sublist in zone].count(0) for zone in [row_split, col_split, block_split]])
 
@@ -67,16 +66,17 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
             if value != 0:
                 rows[j].remove(value)
                 cols[i].remove(value)
-                blocks[self.rootn * (i // self.rootn) + j // self.rootn].remove(value)
+                blocks[self.m * (i // self.m) + j // self.n].remove(value)
             return
 
         # remove all illegal moves
         [remove_illegal(i, j) for i in range(self.N) for j in range(self.N)]
 
         # a move (i,j) is only legal if it is legal in the column row and block, so compute the intersect of them.
-        legal_moves = {(i, j): set(rows[j]).intersection(cols[i], blocks[self.rootn * (i // self.rootn) + j // self.rootn])
+        legal_moves = {(i, j): set(rows[j]).intersection(cols[i], blocks[self.m * (i // self.m) + j // self.n])
                        for i in range(self.N)
                        for j in range(self.N)}
+
         return legal_moves
 
     def compute_best_move(self, game_state: GameState) -> None:
@@ -84,10 +84,40 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         self.N = game_state.board.N
         self.rootn = isqrt(self.N)
         self.N2 = self.N*self.N
-
+        self.n = game_state.board.n
+        self.m = game_state.board.m
         # find all legal moves (according to sudoku rules)
         legal_moves = self.find_legal_moves(board=game_state.board)
 
+        # find all hidden singles
+        """
+        block_lookup_table = {i: [] for i in range(self.N)}
+        [block_lookup_table[self.m * (i // self.m) + j // self.n].append((i, j))
+         for i in range(self.N) for j in range(self.N)]
+
+        for i in range(self.N):
+            for j in range(self.N):
+                current_move = legal_moves[(i, j)]
+                if len(current_move) > 1:
+                    row_moves = [legal_moves[(i, row)] for row in range(self.N) if row != j]
+                    row_hsingle = set(current_move) - set.union(*row_moves)
+                    if len(row_hsingle) == 1:
+                        legal_moves[(i, j)] = row_hsingle
+                        continue
+
+                    col_moves = [legal_moves[(col, j)] for col in range(self.N) if col != i]
+                    col_hsingle = set(current_move) - set.union(*col_moves)
+                    if len(col_hsingle) == 1:
+                        legal_moves[(i, j)] = col_hsingle
+                        continue
+
+                    block_moves = [legal_moves[pos] for pos in
+                                   block_lookup_table[self.m * (i // self.m) + j // self.n] if pos != (i, j)]
+                    block_hsingle = set(current_move) - set.union(*block_moves)
+                    if len(block_hsingle) == 1:
+                        legal_moves[(i, j)] = block_hsingle
+                        continue
+        """
         def possible(i, j, value, game_state):
             # find only moves for empty squares and non-taboo, legal moves.
             return game_state.board.get(i, j) == SudokuBoard.empty and not\
@@ -100,6 +130,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                      for j in range(self.N)
                      for value in range(1, self.N + 1)
                      if possible(i, j, value, game_state)]
+
 
         # assuming that filling in a value which is most common on the board is more likely to keep the sudoku solveable
         # we only keep, for each indice where we might play a move, the move corresponding to the most common number
@@ -147,7 +178,6 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                 cname = calcname + [ccountr]
                 ccountr += 1
                 calc_children.append({'move': indice, 'name': cname})
-
             return nsquares, self.scoremap[scorediff], score, calc_children
 
         # calculate the score for the root position.
@@ -177,7 +207,9 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         proposed_move = max(tree, key=lambda x: x['eval']).copy()
         self.propose_move(proposed_move['move'])
 
-        def get_general_node(child):
+
+
+        def get_general_node(child,parent):
             """
 
             @param child: a child of some node
@@ -216,22 +248,36 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         moves = tree
         # depth is a cosmetic parameter
         depth = 0
+
+        def place_children(children, parent):
+            child_nodes = list(zip(*children))[0]
+
+            insertion_pos = next(x for x in tree if x['name'][0] == parent['name'][0])
+            for nesting in parent['name'][1:]:
+                insertion_pos = insertion_pos['eval'][nesting]
+            insertion_pos['eval'] = child_nodes
+
+            return list(zip(*children))[1]
+
         while True:
             ########################################
             # populating the tree with a new layer #
             ########################################
-
             # initializing parameters
             depth += 1
             proposed_move['eval'] = float('-inf')
-            allchildren = []
+            #allchildren = []
 
             # at most N*N layers can be computed so after this it does not make sense to keep the loop running.
             if depth > self.N2:
                 break
             print(f'search depth:{depth}')
-
             # compute the evaluation function for the children of each leaf in the current tree and add them as leaves.
+            moves_nested = [place_children([get_general_node(child, parent) for child in parent['children']],
+                            parent) for parent in moves if len(parent['children']) > 0]
+            moves = [package for move_package in moves_nested for package in move_package]
+
+            """
             for parent in moves:
                 if len(parent['children']) > 0:
 
@@ -248,7 +294,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                     for nesting in parent['name'][1:]:
                         insertion_pos = insertion_pos['eval'][nesting]
                     insertion_pos['eval'] = child_nodes
-
+            """
             ##################################
             # back propagation using minimax #
             ##################################
@@ -276,9 +322,9 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                     self.propose_move(move['move'])
 
             # assign all of the new leafs to be analyzed for the next population step.
-            moves = allchildren
+            #moves = allchildren
             # if there are not more children then stop running the loop.
-            if len(allchildren) == 0:
+            if len(moves) == 0:
                 break
 
 

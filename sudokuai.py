@@ -302,20 +302,34 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
 
             # perform minimax on the tree where if the node is a leaf the 'eval' is an integer representing the point
             # gain for the player since the root node, and otherwise the 'eval' is a list of the children of this node.
-            def minimax(movetree):
-                if type(movetree['eval']) != int:
-                    # same trick as before, since the name represents the position the length represents the depth, the
-                    # polarity therefore represents whether it is a minimizing or maximizing layer.
-                    if len(movetree['name']) % 2 == 0:
-                        return max([minimax(subtree) for subtree in movetree['eval']])
-                    else:
-                        return min([minimax(subtree) for subtree in movetree['eval']])
-                else:
+            def minimax(movetree, alpha, beta):
+                if type(movetree['eval']) == int:
                     return movetree['eval']
+
+                # same trick as before, since the name represents the position the length represents the depth, the
+                # polarity therefore represents whether it is a minimizing or maximizing layer.
+                if len(movetree['name']) % 2 == 0:
+                    max_eval = float('-inf')
+                    for child in movetree['eval']:
+                        eval = minimax(child, alpha, beta)
+                        max_eval = max(max_eval, eval)
+                        alpha = max(alpha, eval)
+                        if beta <= alpha:
+                            break
+                    return max_eval
+                else:
+                    min_eval = float('inf')
+                    for child in movetree['eval']:
+                        eval = minimax(child, alpha, beta)
+                        min_eval = min(min_eval, eval)
+                        beta = min(beta, eval)
+                        if beta <= alpha:
+                            break
+                    return min_eval
 
             for move in backcopy:
                 # evaluate all possible moves and find the best one.
-                move['eval'] = minimax(move)
+                move['eval'] = minimax(move, float('-inf'), float('inf'))
                 if move['eval'] > proposed_move['eval']:
                     proposed_move = move
                     print(f'move:{proposed_move["move"]} and evaluation: {proposed_move["eval"]}')

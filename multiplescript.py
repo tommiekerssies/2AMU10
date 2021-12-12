@@ -165,7 +165,11 @@ if __name__ == '__main__':
     for set1 in [0.1,0.5,1,5]:
         print(set1)
         inter_scores = []
-        for i in range(10):
-            inter_scores.append(main('boards/empty-3x3.txt','team14_A1','random_player',set1))
+        for f in [0,1]:
+            for i in range(2):
+                if f==0:
+                    inter_scores.append(main('boards/empty-4x4.txt','team14_A1','random_player',set1))
+                else:
+                    inter_scores.append(main('boards/random-4x4.txt', 'random_player', 'team14_A1', set1))
         scores[set1] = inter_scores
     print(scores)

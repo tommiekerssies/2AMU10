@@ -118,6 +118,38 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                         legal_moves[(i, j)] = block_hsingle
                         continue
         """
+
+        def same_block(bin):
+            blocks = [bin_i/isqrt(self.N) + bin_i % isqrt(self.M) for bin_i in bin]
+            if(len(set(blocks)) == 1):
+                return True
+            else:
+                return False
+
+        def get_block_moves(bin_i):
+            block = bin_i/isqrt(self.N) + bin_i % isqrt(self.M)
+            startIndex = block * self.rootn
+            moves = {}
+            for i in range(self.M):
+                for k in range(self.N):
+                    moves[(i, k)] = (legal_moves[(i, k)])
+            return moves
+
+        for i in range(self.N):
+                row_moves = [legal_moves[(i, row)] for row in range(self.N)]
+                if len(row_moves) > 1:
+                    v_bins = []
+                    for v in range(self.N):
+                        v_bin = [(i * self.N + key) for key, row in row_moves if v in row]
+                        v_bins.append(v_bin)
+                    for bin_val, bin in enumerate(v_bins):
+                        if(same_block(bin)):
+                            """ Cross out posibilities """
+                            cross_moves = get_block_moves(bin[0])
+                            actual_to_cross = [val for ind, val in cross_moves if (ind[0] * self.N + ind[1]) not in bin]
+                            for index, moves in actual_to_cross:
+                                legal_moves[index] = set(moves) - set(Move(index[0], index[1], bin_val))
+
         def possible(i, j, value, game_state):
             # find only moves for empty squares and non-taboo, legal moves.
             return game_state.board.get(i, j) == SudokuBoard.empty and not\

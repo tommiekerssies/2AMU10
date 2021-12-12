@@ -6,9 +6,87 @@ from competitive_sudoku.sudoku import GameState, Move, SudokuBoard, TabooMove
 import competitive_sudoku.sudokuai
 from math import isqrt
 from operator import itemgetter
-from copy import deepcopy
 from collections import Counter
 from itertools import groupby
+import operator
+
+
+
+#####################
+# for building tree #
+#####################
+class Node:
+    """
+    A node somewhere in the tree under the nodes corresponding to possible moves.
+
+    name: a tuple of indices corresponding to all moves played from the current position with the candidate move being
+            preceded by a p.
+                    example: ('p3',7,5) would mean it's analyzing for a position that occurred after playing on indices
+                    3 then 7 then 5.
+
+    squares: a 1D array of the board where hypothetical moves are denoted by -1.
+                    example: [0,1,-1,-1] would mean a board that has (0,0) is empty, (0,1) = 1 and the current
+                     node analyzes for a path were moves were played in positions: (1,0),(1,1)
+
+    """
+    def __init__(self, name, squares):
+        self.squares = squares
+        self.name = name
+        self.children = {}
+        self.eval = None
+
+
+class CandidateNode:
+    """
+    Class for the moves right under the root node.
+    The same as the Node class only containing an extra parameter move to denote the move that will be played e.g.
+    (0,1)->4.
+    and an extra parameter static_eval which is the same as eval, but eval updates based on the minimax. However,
+    the evaluation of the move on its own is also necessary for some actions.
+    """
+    def __init__(self, name, squares, move, evaluation):
+        self.squares = squares
+        self.name = name
+        self.children = {}
+        self.move = move
+        self.eval = evaluation
+        self.static_eval = evaluation
+
+
+###############
+# for minimax #
+###############
+
+# maps nr. of completed regions to points scored.
+scoremap = {0: 0,
+            1: 1,
+            2: 3,
+            3: 7}
+
+
+class Score:
+    """
+    This class calculates and keeps track of the score for each node in the tree
+    child_score: the total amount of completed regions in the node's child.
+    parent_score: the total amount of completed regions in the node.
+    sign: whether the moves has a positive or negative effect on the score (if opponents turn, evaluation is negatively
+    affected).
+
+    self.score: the evaluation for the current node.
+
+    """
+    def __init__(self, child_score, parent_score, sign):
+        self.count = parent_score
+        self.score = (sign * scoremap[child_score.count-parent_score])+child_score.score
+
+
+class Leaf_score:
+    """
+    The same as the Score class, however since the leaf has no child, the score is 0
+    """
+    def __init__(self, count):
+        self.count = count
+        self.score = 0
 
 
 class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
@@ -17,12 +95,9 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
     """
 
     def __init__(self):
-        self.scoremap = {0: 0,
-                         1: 1,
-                         2: 3,
-                         3: 7}
         super().__init__()
 
+    # counts the total amount of filled in regions.
     def countfilled(self, squares):
         """
 
@@ -42,6 +117,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
 
         split_indices_block = [indices_block[x:x + self.N] for x in range(0, len(indices_block), self.N)]
         block_split = [itemgetter(*index)(squares) for index in split_indices_block]
+
         # count all the empty values for each group in the rows, columns and blocks, then take the total of the three.
         return sum([[sublist.count(0) for sublist in zone].count(0) for zone in [row_split, col_split, block_split]])
 
@@ -59,7 +135,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
 
         def remove_illegal(i, j):
             """
-            for a value located at (i,j). If the value is filled in (>0) remove it from the lists of posible moves
+            for a value located at (i,j). If the value is filled in (>0) remove it from the lists of possible moves
             corresponding to that row, column and block.
             """
             value = board.get(i, j)
@@ -82,23 +158,27 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
     def compute_best_move(self, game_state: GameState) -> None:
         # parameters
         self.N = game_state.board.N
-        self.rootn = isqrt(self.N)
-        self.N2 = self.N*self.N
         self.n = game_state.board.n
         self.m = game_state.board.m
         # find all legal moves (according to sudoku rules)
         legal_moves = self.find_legal_moves(board=game_state.board)
 
-        # find all hidden singles
-        """
+        ###########################
+        # find all hidden singles #
+        ###########################
+
+        # for the i'th block, find all combinations of (i,j) that fall in that block
         block_lookup_table = {i: [] for i in range(self.N)}
         [block_lookup_table[self.m * (i // self.m) + j // self.n].append((i, j))
          for i in range(self.N) for j in range(self.N)]
 
+        # for all combinations of (i,j) see if there exist a possible move which is not allowed in any other square
+        # in the row, column or block of (i,j). Then make this move the only legal move for position (i,j)
         for i in range(self.N):
             for j in range(self.N):
                 current_move = legal_moves[(i, j)]
                 if len(current_move) > 1:
+                    # check for row, column, block if there is a number which cannot be filled in anywhere but on (i,j)
                     row_moves = [legal_moves[(i, row)] for row in range(self.N) if row != j]
                     row_hsingle = set(current_move) - set.union(*row_moves)
                     if len(row_hsingle) == 1:
@@ -117,12 +197,13 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                     if len(block_hsingle) == 1:
                         legal_moves[(i, j)] = block_hsingle
                         continue
-        """
+
+
         def possible(i, j, value, game_state):
             # find only moves for empty squares and non-taboo, legal moves.
-            return game_state.board.get(i, j) == SudokuBoard.empty and not\
+            return game_state.board.get(i, j) == SudokuBoard.empty and not \
                 TabooMove(i, j, value) in game_state.taboo_moves and \
-                value in legal_moves[(i, j)]
+                   value in legal_moves[(i, j)]
 
         # find all non forfeiting moves.
         all_moves = [(Move(i, j, value), (i * self.N) + j)
@@ -130,7 +211,6 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                      for j in range(self.N)
                      for value in range(1, self.N + 1)
                      if possible(i, j, value, game_state)]
-
 
         # assuming that filling in a value which is most common on the board is more likely to keep the sudoku solveable
         # we only keep, for each indice where we might play a move, the move corresponding to the most common number
@@ -147,7 +227,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         all_moves = new_moveset
 
         # calculate various additional parameters for each move
-        def calcmove(indice, prev_score, calcsquares, calcname):
+        def calcmove(indice, prev_score, calcsquares):
             """
 
             @param indice:  where on the sudoku board the move will take place
@@ -157,7 +237,6 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
             @return:
                 nsquares: a 1D array of the board after the move has been played
                 scorediff: the amount of points scored by playing the move
-                score: the amount of rows,columns and blocks that are filled after the move has been played
                 calc_children: a list of the moves that can be played after playing this move
 
             Calculates the state of the board and score after playing a hypothethical move.
@@ -167,178 +246,150 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
             nsquares[indice] = -1
             score = self.countfilled(nsquares)
             scorediff = score - prev_score
-
-            # find children
-            indices = [i for i, j in enumerate(nsquares) if j == 0]
-            ccountr = 0
-            calc_children = []
-            for indice in indices:
-                # the name for each possible move is a list starting with the name of the parent node (node directly
-                # under the root) and from the positions under each of the parents node children, grandchildren etc.
-                cname = calcname + [ccountr]
-                ccountr += 1
-                calc_children.append({'move': indice, 'name': cname})
-            return nsquares, self.scoremap[scorediff], score, calc_children
+            return nsquares, scoremap[scorediff]
 
         # calculate the score for the root position.
         initial_score = self.countfilled(game_state.board.squares)
 
-
         def get_candidate_node(tag, move):
-            """
+            name = (f'p{tag}',)
+            squares, points = calcmove(move[1], initial_score, game_state.board.squares)
+            return CandidateNode(name, squares, move[0], points)
 
-            @param tag: a unique identifier
-            @param move: a move object
-            @return: a dictionary representing a move which contains all important parameters for the move
+        # construct a tree as a collection of the direct children of the root node (candidate nodes)
+        tree = {(f'p{nr}',): get_candidate_node(nr, move) for nr, move in enumerate(all_moves)}
 
-            Calculates all important parameters for the direct children of the root nodes and returns them as a dict.
-            Important is that 'eval' and 'tally' are the same but during the minimax eval will house the children of the
-            node whilst tally stays unchanged.
-            """
-            name = [f'p{tag}']
-            squares, points, score, can_children = calcmove(move[1], initial_score, game_state.board.squares, name)
-            return {'name': name, 'move': move[0], 'squares': squares, 'eval': points, 'tally': points, 'score': score,
-                    'children': can_children}
+        # propose the best candidate node.
+        pmove = max(list(tree.values()), key=operator.attrgetter('eval')).move
+        print(f'd0, proposed move is {pmove}')
+        self.propose_move(pmove)
 
-        # construct a tree as a collection of the direct children of the root node
-        tree = [get_candidate_node(nr, move) for nr, move in enumerate(all_moves)]
+        def update_squares(squares, indice):
+            # for a proposed move on the square at indice, set the value of the indice to be -1
+            sq = squares.copy()
+            sq[indice] = -1
+            return sq
 
-        # get best candidate for depth=1:
-        proposed_move = max(tree, key=lambda x: x['eval']).copy()
-        self.propose_move(proposed_move['move'])
+        def find_children(parent):
+            # get the children of a node, with name denothing what the path of the node is, and squares the occupied
+            # positions on the board.
+            return {parent.name+(i,): Node(parent.name+(i,), update_squares(parent.squares, i))
+                    for i, indice in enumerate(parent.squares) if indice == 0}
 
+        def delve(list_tree):
+            # get all children of the list_tree
+            list_tree = [o.children for o in list_tree]
+            list_tree = {key: value for sublist in list_tree for key, value in zip(sublist.keys(),sublist.values())}
+            return list_tree
 
-
-        def get_general_node(child,parent):
-            """
-
-            @param child: a child of some node
-            @return:
-                as_node: returns a dict containing only the name (which is equal to its position within the tree) and
-                the evaluation at that position
-                as_move: returns a dict containing all information which is needed to compute the as_node parameters for
-                the children of this node.
-
-            This function computes the evaluation on a node given its parent and returns the evaluation along with
-            the necessary parameters to compute the eval for its children.
-            """
-
-            child_squares, child_points, child_score, child_children = \
-                calcmove(child['move'], parent['score'], parent['squares'], child['name'])
-
-            # the eval represents the points lead gained by the player. since the name represents the position of the
-            # node in the tree, the lenght of the name represents the depth and thus if it is the opponents turn or
-            # players turn. For even lenghts the opponent moves and the evaluation therefore goes down by the points
-            # the opponent scores.
-            if len(child['name']) % 2 == 0:
-                child_eval = parent['tally'] - child_points
-            else:
-                child_eval = parent['tally'] + child_points
-
-            as_node = {'name': child['name'], 'eval': child_eval}
-            as_move = {'name': child['name'],
-                       'squares': child_squares,
-                       'score': child_score,
-                       'children': child_children,
-                       'tally': child_eval,
-                       'eval': child_eval}
-            return as_node, as_move
-
-        # initialize the parameter moves as the set of children of the root node.
-        moves = tree
-        # depth is a cosmetic parameter
         depth = 0
-
-        def place_children(children, parent):
-            child_nodes = list(zip(*children))[0]
-
-            insertion_pos = next(x for x in tree if x['name'][0] == parent['name'][0])
-            for nesting in parent['name'][1:]:
-                insertion_pos = insertion_pos['eval'][nesting]
-            insertion_pos['eval'] = child_nodes
-
-            return list(zip(*children))[1]
-
         while True:
-            ########################################
-            # populating the tree with a new layer #
-            ########################################
-            # initializing parameters
-            depth += 1
-            proposed_move['eval'] = float('-inf')
-            #allchildren = []
+            # get the set of leaf nodes
+            moves = tree
+            for i in range(depth):
+                moves = delve(moves.values())
 
-            # at most N*N layers can be computed so after this it does not make sense to keep the loop running.
-            if depth > self.N2:
-                break
-            print(f'search depth:{depth}')
-            # compute the evaluation function for the children of each leaf in the current tree and add them as leaves.
-            moves_nested = [place_children([get_general_node(child, parent) for child in parent['children']],
-                            parent) for parent in moves if len(parent['children']) > 0]
-            moves = [package for move_package in moves_nested for package in move_package]
-
-            """
-            for parent in moves:
-                if len(parent['children']) > 0:
-
-                    children = [get_general_node(child) for child in parent['children']]
-                    child_nodes = list(zip(*children))[0]
-                    child_moves = list(zip(*children))[1]
-
-                    allchildren = allchildren+list(child_moves)
-
-                    # the new leaves are stored in the eval of the previous leaves, the name gives the position where
-                    # the new leaf should be stored, this code looks through the name and then stores the new leaf
-                    # in the right position of the tree
-                    insertion_pos = next(x for x in tree if x['name'][0] == parent['name'][0])
-                    for nesting in parent['name'][1:]:
-                        insertion_pos = insertion_pos['eval'][nesting]
-                    insertion_pos['eval'] = child_nodes
-            """
-            ##################################
-            # back propagation using minimax #
-            ##################################
-            backcopy = deepcopy(tree)
-
-            # perform minimax on the tree where if the node is a leaf the 'eval' is an integer representing the point
-            # gain for the player since the root node, and otherwise the 'eval' is a list of the children of this node.
-            def minimax(movetree, alpha, beta):
-                if type(movetree['eval']) == int:
-                    return movetree['eval']
-
-                # same trick as before, since the name represents the position the length represents the depth, the
-                # polarity therefore represents whether it is a minimizing or maximizing layer.
-                if len(movetree['name']) % 2 == 0:
-                    max_eval = float('-inf')
-                    for child in movetree['eval']:
-                        eval = minimax(child, alpha, beta)
-                        max_eval = max(max_eval, eval)
-                        alpha = max(alpha, eval)
-                        if beta <= alpha:
-                            break
-                    return max_eval
-                else:
-                    min_eval = float('inf')
-                    for child in movetree['eval']:
-                        eval = minimax(child, alpha, beta)
-                        min_eval = min(min_eval, eval)
-                        beta = min(beta, eval)
-                        if beta <= alpha:
-                            break
-                    return min_eval
-
-            for move in backcopy:
-                # evaluate all possible moves and find the best one.
-                move['eval'] = minimax(move, float('-inf'), float('inf'))
-                if move['eval'] > proposed_move['eval']:
-                    proposed_move = move
-                    print(f'move:{proposed_move["move"]} and evaluation: {proposed_move["eval"]}')
-                    self.propose_move(move['move'])
-
-            # assign all of the new leafs to be analyzed for the next population step.
-            #moves = allchildren
-            # if there are not more children then stop running the loop.
+            # if the board is full stop running
             if len(moves) == 0:
+                print('killed')
                 break
+
+            # find the children of the leaf nodes and add them to the tree
+            for parent in moves.values():
+                parent.children = find_children(parent)
+            # increment the depth
+            depth += 1
+
+            def minimax(movetree, alpha, beta):
+                """
+                Minimax with a/b pruning.
+                Calculates the evaluation for the root node in movetree.
+
+                @param movetree: a tree or subtree of moves with a single root node.
+                @param alpha: minimax parameter
+                @param beta:  minimax parameter
+                @return: evaluation for the root node.
+                """
+
+                # score the leaves
+                if len(movetree.children) == 0:
+                    return Leaf_score(self.countfilled(movetree.squares))
+                # score the nodes
+                else:
+                    current_score = self.countfilled(movetree.squares)
+                    # name indicates path so its polarity shows whether it is a min or max layer.
+                    if len(movetree.name) % 2 == 0:
+                        max_node = None
+                        max_eval = float('-inf')
+                        # get the most favorable evaluation of the children
+                        for child_tree in movetree.children.values():
+                            # compute the evaluation of the child using minimax
+                            curr_eval = Score(minimax(child_tree, alpha, beta), current_score, 1)
+                            child_tree.eval = curr_eval.score
+                            if max_eval < curr_eval.score:
+                                max_node = curr_eval
+                                max_eval = curr_eval.score
+                            alpha = max(alpha, curr_eval.score)
+                            if beta <= alpha:
+                                break
+                        return max_node
+
+                    else:
+                        # same procedure as above but for min layers.
+                        min_node = None
+                        min_eval = float('inf')
+                        for child_tree in movetree.children.values():
+                            curr_eval = Score(minimax(child_tree, alpha, beta), current_score, -1)
+                            child_tree.eval = curr_eval.score
+                            if min_eval > curr_eval.score:
+                                min_node = curr_eval
+                                min_eval = curr_eval.score
+                            beta = min(beta, curr_eval.score)
+                            if beta <= alpha:
+                                break
+                        return min_node
+
+            # evaluate all candidate nodes and propose the strongest.
+            """This generally isn't the slowest step but things can go wrong if the program is forced to halt here
+            as it proposes moves iteratively, so it can propose the first move, which may be garbage and then not have
+            time to propose a better move."""
+            move_eval = float('-inf')
+            for move in tree.values():
+                # uses the static eval because otherwise things go wrong when looking at deeper levels.
+                move.eval = move.static_eval + minimax(move, float('-inf'), float('inf')).score
+                if move.eval > move_eval:
+                    move_eval = move.eval
+                    self.propose_move(move.move)
+                    print(f'proposing: {move.move}\n with evaluation:{move_eval}')
+            print(f'finished depth {depth}')
+
+            def order(branch):
+                """
+                Orders a minimax tree based on evaluations.
+
+                @param branch: The children of some node in the tree e.g. all the candidate nodes
+                                (children of root node)
+                @return: an ordered version of the branch
+                """
+                # if the nodes have children, also order the children.
+                if len(list(branch.values())[0].children) != 0:
+                    for branch_move in branch.values():
+                        branch_move.children = order(branch_move.children)
+                # based on whether it is a min or max layer (represented by the parity of a node's name) sort the nodes.
+                """None values appear where the tree was pruned during minimax, these branches should keep being pruned
+                as long as they appear after all the nodes that came before them, therefore all pruned nodes are
+                placed at the back."""
+                if len(list(branch.keys())[0]) % 2 == 0:
+                    ordered_branch = sorted(branch.items(),
+                                            key=lambda x: float('inf') if not x[1].eval else x[1].eval, reverse=False)
+                else:
+                    ordered_branch = sorted(branch.items(),
+                                            key=lambda x: float('-inf') if not x[1].eval else x[1].eval, reverse=True)
+
+                return {move_name_combo[0]: move_name_combo[1] for move_name_combo in ordered_branch}
+
+            # orders the current tree based on evaluations.
+            tree = order(tree)
+
 
 

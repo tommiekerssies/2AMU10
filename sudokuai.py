@@ -170,15 +170,15 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         ###############
         # Heuristics: #
         ###############
-        ###########################
-        # find all hidden singles #
-        ###########################
 
         # for the i'th block, find all combinations of (i,j) that fall in that block
         block_lookup_table = {i: [] for i in range(self.N)}
         [block_lookup_table[self.m * (i // self.m) + j // self.n].append((i, j))
          for i in range(self.N) for j in range(self.N)]
 
+        ###########################
+        # find all hidden singles #
+        ###########################
         # for all combinations of (i,j) see if there exist a possible move which is not allowed in any other square
         # in the row, column or block of (i,j). Then make this move the only legal move for position (i,j)
         for i in range(self.N):
@@ -204,6 +204,118 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                     if len(block_hsingle) == 1:
                         playable_moves[(i, j)] = block_hsingle
                         continue
+
+        ###################################
+        # find all hidden tuples in a row #
+        ###################################
+        # for all rows...
+        for i in range(self.N):
+            # get the playable moves per cell
+            row_moves = [playable_moves[(i, row)] for row in range(self.N)]
+            # if there are less than two cells in the row there cannot be a tuple
+            if len(row_moves) <= 2:
+                continue
+            # for all cells in the row...
+            for j1, moves1 in enumerate(row_moves):
+                # we are trying to reduce the possible moves in this cell to 2 so if it is already 2
+                # or less possible moves we can skip it
+                if len(moves1) <= 2:
+                    continue
+                # go through the cells again to find a potential twin
+                for j2, moves2 in enumerate(row_moves):
+                    # skip the cell combi's we already covered
+                    if j2 <= j1:
+                        continue
+                    # make a candidate set of moves for this potential hidden tuple
+                    htuple_candidate = list(set(moves1) & set(moves2))
+                    # now keep checking whether the candidate set is indeed a hidden tuple
+                    while len(htuple_candidate) > 1:
+                        # assume it is a hidden tuple until proven otherwise
+                        is_htuple = True
+                        # now go through the cells again for a third time, because we want to find a counterexample
+                        for j3, moves3 in enumerate(row_moves):
+                            # skip the cells for the potential hidden tuple itself
+                            if j3 == j1 or j3 == j2:
+                                continue
+                            # check if there is a move in this cell that is also in the candidate set, and if it is
+                            # remove it from the candidate set and we will try again if the candidate set is still
+                            # bigger than one in length
+                            for move in htuple_candidate:
+                                if move in moves3:
+                                    is_htuple = False
+                                    htuple_candidate.remove(move)
+                                    break
+                            if not is_htuple:
+                                break
+                        # if it turns out to be a hidden tuple, update the possible moves by the candidate set
+                        if is_htuple:
+                            playable_moves[(i, j1)] = htuple_candidate
+                            playable_moves[(i, j2)] = htuple_candidate
+                            break
+
+        ######################################
+        # find all hidden tuples in a column #
+        ######################################
+        # almost same logic as in a row, see the comments there
+        for j in range(self.N):
+            col_moves = [playable_moves[(col, j)] for col in range(self.N)]
+            if len(col_moves) <= 2:
+                continue
+            for i1, moves1 in enumerate(col_moves):
+                if len(moves1) <= 2:
+                    continue
+                for i2, moves2 in enumerate(col_moves):
+                    if i2 <= i1:
+                        continue
+                    htuple_candidate = list(set(moves1) & set(moves2))
+                    while len(htuple_candidate) > 1:
+                        is_htuple = True
+                        for i3, moves3 in enumerate(col_moves):
+                            if i3 == i1 or i3 == i2:
+                                continue
+                            for move in htuple_candidate:
+                                if move in moves3:
+                                    is_htuple = False
+                                    htuple_candidate.remove(move)
+                                    break
+                            if not is_htuple:
+                                break
+                        if is_htuple:
+                            playable_moves[(i1, j)] = htuple_candidate
+                            playable_moves[(i2, j)] = htuple_candidate
+                            break
+
+        #####################################
+        # find all hidden tuples in a block #
+        #####################################
+        # almost same logic as in a row, see the comments there
+        for b in range(len(block_lookup_table)):
+            block_moves = [(pos, playable_moves[pos]) for pos in block_lookup_table[b]]
+            if len(block_moves) <= 2:
+                continue
+            for b_i1, moves1 in enumerate(block_moves):
+                if len(moves1) <= 2:
+                    continue
+                for b_i2, moves2 in enumerate(block_moves):
+                    if b_i2 <= b_i1:
+                        continue
+                    htuple_candidate = list(set(moves1) & set(moves2))
+                    while len(htuple_candidate) > 1:
+                        is_htuple = True
+                        for b_i3, (_, moves3) in enumerate(block_moves):
+                            if b_i3 == b_i1 or b_i3 == b_i2:
+                                continue
+                            for move in htuple_candidate:
+                                if move in moves3:
+                                    is_htuple = False
+                                    htuple_candidate.remove(move)
+                                    break
+                            if not is_htuple:
+                                break
+                        if is_htuple:
+                            playable_moves[block_moves[b_i1][0]] = htuple_candidate
+                            playable_moves[block_moves[b_i2][0]] = htuple_candidate
+                            break
 
         #def possible(i, j, value, game_state):
         #    # find only moves for empty squares and non-taboo, legal moves.

@@ -155,6 +155,18 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         self.m = game_state.board.m
         # find all legal moves (according to sudoku rules)
         legal_moves = self.find_legal_moves(board=game_state.board)
+
+        def playable(key, value):
+            if game_state.board.get(key[0], key[1]) != SudokuBoard.empty:
+                return set()
+            return set([val for val in value if TabooMove(key[0], key[1], val) not in game_state.taboo_moves])
+        playable_moves = {key: playable(key, value) for key,value in legal_moves.items()}
+
+
+        #for key, value in legal_moves.items():
+        #    if game_state.board.get(key[0], key[1]) == SudokuBoard.empty:
+        #        values = (val for val in value if TabooMove(key[0], key[1], val) not in game_state.taboo_moves)
+
         ###############
         # Heuristics: #
         ###############
@@ -171,33 +183,37 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         # in the row, column or block of (i,j). Then make this move the only legal move for position (i,j)
         for i in range(self.N):
             for j in range(self.N):
-                current_move = legal_moves[(i, j)]
+                current_move = playable_moves[(i, j)]
                 if len(current_move) > 1:
                     # check for row, column, block if there is a number which cannot be filled in anywhere but on (i,j)
-                    row_moves = [legal_moves[(i, row)] for row in range(self.N) if row != j]
+                    row_moves = [playable_moves[(i, row)] for row in range(self.N) if row != j]
                     row_hsingle = set(current_move) - set.union(*row_moves)
                     if len(row_hsingle) == 1:
-                        legal_moves[(i, j)] = row_hsingle
+                        playable_moves[(i, j)] = row_hsingle
                         continue
 
-                    col_moves = [legal_moves[(col, j)] for col in range(self.N) if col != i]
+                    col_moves = [playable_moves[(col, j)] for col in range(self.N) if col != i]
                     col_hsingle = set(current_move) - set.union(*col_moves)
                     if len(col_hsingle) == 1:
-                        legal_moves[(i, j)] = col_hsingle
+                        playable_moves[(i, j)] = col_hsingle
                         continue
 
-                    block_moves = [legal_moves[pos] for pos in
+                    block_moves = [playable_moves[pos] for pos in
                                    block_lookup_table[self.m * (i // self.m) + j // self.n] if pos != (i, j)]
                     block_hsingle = set(current_move) - set.union(*block_moves)
                     if len(block_hsingle) == 1:
-                        legal_moves[(i, j)] = block_hsingle
+                        playable_moves[(i, j)] = block_hsingle
                         continue
 
+        #def possible(i, j, value, game_state):
+        #    # find only moves for empty squares and non-taboo, legal moves.
+        #    return game_state.board.get(i, j) == SudokuBoard.empty and not \
+        #        TabooMove(i, j, value) in game_state.taboo_moves and \
+        #           value in legal_moves[(i, j)]
+
         def possible(i, j, value, game_state):
-            # find only moves for empty squares and non-taboo, legal moves.
-            return game_state.board.get(i, j) == SudokuBoard.empty and not \
-                TabooMove(i, j, value) in game_state.taboo_moves and \
-                   value in legal_moves[(i, j)]
+            return value in playable_moves[(i, j)]
+
 
         # find all non forfeiting moves.
         all_moves = [(Move(i, j, value), (i * self.N) + j)
@@ -205,6 +221,9 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                      for j in range(self.N)
                      for value in range(1, self.N + 1)
                      if possible(i, j, value, game_state)]
+
+
+
 
         ############################
         # Assign most common moves #

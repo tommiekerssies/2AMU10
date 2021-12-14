@@ -499,6 +499,9 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
             if pmove.eval < 0 and passing_exists:
                 self.propose_move(passing_move)
                 print('trying to pass')
+            elif pmove.eval == 0 and passing_exists and game_state.board.squares.count(0) % 2 == 1:
+                self.propose_move(passing_move)
+                print('passing to get last move')
             else:
                 self.propose_move(pmove.move)
                 print(f'proposing: {pmove.move}\n with evaluation:{pmove.eval}')

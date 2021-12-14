@@ -118,6 +118,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                         legal_moves[(i, j)] = block_hsingle
                         continue
         """
+        print("Legal moves before the prune are: ", legal_moves)
 
         def same_block(bin):
             blocks = [bin_i/isqrt(self.N) + bin_i % isqrt(self.M) for bin_i in bin]
@@ -148,6 +149,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                             cross_moves = get_block_moves(bin[0])
                             actual_to_cross = [val for ind, val in cross_moves if (ind[0] * self.N + ind[1]) not in bin]
                             for index, moves in actual_to_cross:
+                                print("Pruning out ", index, " moves ", moves)
                                 legal_moves[index] = set(moves) - set(Move(index[0], index[1], bin_val))
 
         def possible(i, j, value, game_state):
@@ -359,13 +361,13 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                             break
                     return min_eval
 
-            for move in backcopy:
-                # evaluate all possible moves and find the best one.
-                move['eval'] = minimax(move, float('-inf'), float('inf'))
-                if move['eval'] > proposed_move['eval']:
-                    proposed_move = move
-                    print(f'move:{proposed_move["move"]} and evaluation: {proposed_move["eval"]}')
-                    self.propose_move(move['move'])
+            # for move in backcopy:
+            #     # evaluate all possible moves and find the best one.
+            #     move['eval'] = minimax(move, float('-inf'), float('inf'))
+            #     if move['eval'] > proposed_move['eval']:
+            #         proposed_move = move
+            #         print(f'move:{proposed_move["move"]} and evaluation: {proposed_move["eval"]}')
+            #         self.propose_move(move['move'])
 
             # assign all of the new leafs to be analyzed for the next population step.
             #moves = allchildren

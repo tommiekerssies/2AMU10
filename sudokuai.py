@@ -11,16 +11,13 @@ import operator
 class Node:
     """
     A node somewhere in the tree under the nodes corresponding to possible moves.
-
     name: a tuple of indices corresponding to all moves played from the current position with the candidate move being
             preceded by a p.
                     example: ('p3',7,5) would mean it's analyzing for a position that occurred after playing on indices
                     3 then 7 then 5.
-
     squares: a 1D array of the board where hypothetical moves are denoted by -1.
                     example: [0,1,-1,-1] would mean a board that has (0,0) is empty, (0,1) = 1 and the current
                      node analyzes for a path were moves were played in positions: (1,0),(1,1)
-
     """
     def __init__(self, name, squares):
         self.squares = squares
@@ -64,9 +61,7 @@ class Score:
     parent_score: the total amount of completed regions in the node.
     sign: whether the moves has a positive or negative effect on the score (if opponents turn, evaluation is negatively
     affected).
-
     self.score: the evaluation for the current node.
-
     """
     def __init__(self, child_score, parent_score, sign):
         self.count = parent_score
@@ -93,10 +88,8 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
     # counts the total amount of filled in regions.
     def countfilled(self, squares):
         """
-
         @param squares: the squares parameter from the game state
         @return: the total amount of filled columns, rows and blocks
-
         The function takes an array of length N*N and computes, when converted to a sudoku board, how many rows, columns
         and blocks don't contain any filled-in values. it returns the sum of the amount of rows, columns and blocks.
         """
@@ -161,7 +154,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                 return set()
             return set([val for val in value if TabooMove(key[0], key[1], val) not in game_state.taboo_moves])
         playable_moves = {key: playable(key, value) for key,value in legal_moves.items()}
-
+        static_playable_moves = playable_moves.copy()
 
         #for key, value in legal_moves.items():
         #    if game_state.board.get(key[0], key[1]) == SudokuBoard.empty:
@@ -317,11 +310,14 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                             playable_moves[block_moves[b_i2][0]] = htuple_candidate
                             break
 
-        #def possible(i, j, value, game_state):
-        #    # find only moves for empty squares and non-taboo, legal moves.
-        #    return game_state.board.get(i, j) == SudokuBoard.empty and not \
-        #        TabooMove(i, j, value) in game_state.taboo_moves and \
-        #           value in legal_moves[(i, j)]
+        passing_exists = False
+        for move in playable_moves.keys():
+
+            if len(static_playable_moves[move] - set(playable_moves[move])) != 0:
+                passing_exists = True
+                passing_move = Move(move[0],move[1], list(static_playable_moves[move] - set(playable_moves[move]))[0])
+                print(passing_move)
+                break
 
         def possible(i, j, value, game_state):
             return value in playable_moves[(i, j)]
@@ -362,7 +358,6 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         # calculate various additional parameters for each move
         def calcmove(indice, prev_score, calcsquares):
             """
-
             @param indice:  where on the sudoku board the move will take place
             @param prev_score:  the score for the board prior to the move being played
             @param calcsquares: a 1D array of the board before prior to the move being played
@@ -371,7 +366,6 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                 nsquares: a 1D array of the board after the move has been played
                 scorediff: the amount of points scored by playing the move
                 calc_children: a list of the moves that can be played after playing this move
-
             Calculates the state of the board and score after playing a hypothethical move.
             """
             nsquares = calcsquares.copy()
@@ -449,7 +443,6 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                 """
                 Minimax with a/b pruning.
                 Calculates the evaluation for the root node in movetree.
-
                 @param movetree: a tree or subtree of moves with a single root node.
                 @param alpha: minimax parameter
                 @param beta:  minimax parameter
@@ -503,9 +496,13 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                 move.eval = move.static_eval + minimax(move, float('-inf'), float('inf')).score
 
             pmove = max(list(tree.values()), key=operator.attrgetter('eval'))
-            self.propose_move(pmove.move)
-            print(f'proposing: {pmove.move}\n with evaluation:{pmove.eval}')
-            print(f'finished depth {depth}')
+            if pmove.eval < 0 and passing_exists:
+                self.propose_move(passing_move)
+                print('trying to pass')
+            else:
+                self.propose_move(pmove.move)
+                print(f'proposing: {pmove.move}\n with evaluation:{pmove.eval}')
+                print(f'finished depth {depth}')
 
             ##################################################
             # Sorting Tree to increase pruning on next depth #
@@ -514,7 +511,6 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
             def order(branch):
                 """
                 Orders a minimax tree based on evaluations.
-
                 @param branch: The children of some node in the tree e.g. all the candidate nodes
                                 (children of root node)
                 @return: an ordered version of the branch
@@ -538,6 +534,3 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
 
             # orders the current tree based on evaluations.
             tree = order(tree)
-
-
-

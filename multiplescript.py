@@ -15,6 +15,8 @@ from competitive_sudoku.execute import solve_sudoku
 from competitive_sudoku.sudoku import GameState, SudokuBoard, Move, TabooMove, load_sudoku_from_text
 from competitive_sudoku.sudokuai import SudokuAI
 
+
+
 def check_oracle(solve_sudoku_path: str) -> None:
     board_text = '''2 2
        1   2   3   4
@@ -161,11 +163,33 @@ def main(board_text_2,module1_2,module2_2,time_2):
     return winner,p1,p2
 
 if __name__ == '__main__':
+    """
     scores = {}
     for set1 in [0.1,0.5,1,5]:
         print(set1)
         inter_scores = []
-        for i in range(10):
-            inter_scores.append(main('boards/empty-3x3.txt','team14_A1','random_player',set1))
+        for f in [0,1]:
+            for i in range(1):
+                if f==0:
+                    inter_scores.append(main('boards/empty-3x3.txt','team14_A1','greedy_player',set1))
+                else:
+                    inter_scores.append(main('boards/empty-3x4.txt', 'greedy_player', 'team14_A1', set1))
         scores[set1] = inter_scores
-    print(scores)
+    print(scores)"""
+    all_wins = {}
+    for t in [0.1, 0.5, 1, 5]:
+        timestep_wins = {}
+        for i in range(2):
+            sprint_wins = []
+            for run in range(10):
+                if i == 0:
+                    winner, p1, p2 = main('boards/empty-3x3.txt', 'team14_A2', 'greedy_player', t)
+                else:
+                    winner, p1, p2 = main('boards/empty-3x3.txt', 'greedy_player', 'team14_A2', t)
+                sprint_wins.append(winner)
+            if i==0:
+                timestep_wins['wefirst'] = sprint_wins
+            else:
+                timestep_wins['wesecond'] = sprint_wins
+        all_wins[t] = timestep_wins
+    print(all_wins)

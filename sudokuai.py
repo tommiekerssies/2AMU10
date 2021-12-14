@@ -392,20 +392,95 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
             # perform minimax on the tree where if the node is a leaf the 'eval' is an integer representing the point
             # gain for the player since the root node, and otherwise the 'eval' is a list of the children of this node.
             def minimax(movetree, alpha, beta):
-                if type(movetree['eval']) == int:
-                    return movetree['eval']
+                """
+                Minimax with a/b pruning.
+                Calculates the evaluation for the root node in movetree.
+                @param movetree: a tree or subtree of moves with a single root node.
+                @param alpha: minimax parameter
+                @param beta:  minimax parameter
+                @return: evaluation for the root node.
+                """
 
-                # same trick as before, since the name represents the position the length represents the depth, the
-                # polarity therefore represents whether it is a minimizing or maximizing layer.
-                if len(movetree['name']) % 2 == 0:
-                    max_eval = float('-inf')
-                    for child in movetree['eval']:
-                        eval = minimax(child, alpha, beta)
-                        max_eval = max(max_eval, eval)
-                        alpha = max(alpha, eval)
-                        if beta <= alpha:
-                            break
-                    return max_eval
+                # score the leaves
+                if len(movetree.children) == 0:
+                    return Leaf_score(self.countfilled(movetree.squares))
+                # score the nodes
+                else:
+                    current_score = self.countfilled(movetree.squares)
+                    # name indicates path so its polarity shows whether it is a min or max layer.
+                    if len(movetree.name) % 2 == 0:
+                        max_node = None
+                        max_eval = float('-inf')
+                        # get the most favorable evaluation of the children
+                        for child_tree in movetree.children.values():
+                            # compute the evaluation of the child using minimax
+                            curr_eval = Score(minimax(child_tree, alpha, beta), current_score, 1)
+                            child_tree.eval = curr_eval.score
+                            if max_eval < curr_eval.score:
+                                max_node = curr_eval
+                                max_eval = curr_eval.score
+                            alpha = max(alpha, curr_eval.score)
+                            if beta <= alpha:
+                                break
+                        return max_node
+
+                    else:
+                        # same procedure as above but for min layers.
+                        min_node = None
+                        min_eval = float('inf')
+                        for child_tree in movetree.children.values():
+                            curr_eval = Score(minimax(child_tree, alpha, beta), current_score, -1)
+                            child_tree.eval = curr_eval.score
+                            if min_eval > curr_eval.score:
+                                min_node = curr_eval
+                                min_eval = curr_eval.score
+                            beta = min(beta, curr_eval.score)
+                            if beta <= alpha:
+                                break
+                        return min_node
+
+            # evaluate all candidate nodes and propose the strongest.
+            """This generally isn't the slowest step but things can go wrong if the program is forced to halt here
+            as it proposes moves iteratively, so it can propose the first move, which may be garbage and then not have
+            time to propose a better move."""
+            for move in tree.values():
+                # uses the static eval because otherwise things go wrong when looking at deeper levels.
+                move.eval = move.static_eval + minimax(move, float('-inf'), float('inf')).score
+
+            pmove = max(list(tree.values()), key=operator.attrgetter('eval'))
+            if pmove.eval < 0 and passing_exists:
+                self.propose_move(passing_move)
+                print('trying to pass')
+            elif pmove.eval == 0 and passing_exists and game_state.board.squares.count(0) % 2 == 1:
+                self.propose_move(passing_move)
+                print('passing to get last move')
+            else:
+                self.propose_move(pmove.move)
+                print(f'proposing: {pmove.move}\n with evaluation:{pmove.eval}')
+                print(f'finished depth {depth}')
+
+            ##################################################
+            # Sorting Tree to increase pruning on next depth #
+            ##################################################
+
+            def order(branch):
+                """
+                Orders a minimax tree based on evaluations.
+                @param branch: The children of some node in the tree e.g. all the candidate nodes
+                                (children of root node)
+                @return: an ordered version of the branch
+                """
+                # if the nodes have children, also order the children.
+                if len(list(branch.values())[0].children) != 0:
+                    for branch_move in branch.values():
+                        branch_move.children = order(branch_move.children)
+                # based on whether it is a min or max layer (represented by the parity of a node's name) sort the nodes.
+                """None values appear where the tree was pruned during minimax, these branches should keep being pruned
+                as long as they appear after all the nodes that came before them, therefore all pruned nodes are
+                placed at the back."""
+                if len(list(branch.keys())[0]) % 2 == 0:
+                    ordered_branch = sorted(branch.items(),
+                                            key=lambda x: float('inf') if not x[1].eval else x[1].eval, reverse=False)
                 else:
                     min_eval = float('inf')
                     for child in movetree['eval']:
@@ -430,4 +505,8 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
             if len(moves) == 0:
                 break
 
+
+
+            # orders the current tree based on evaluations.
+            tree = order(tree)
 

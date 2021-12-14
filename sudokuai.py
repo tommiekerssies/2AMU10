@@ -117,14 +117,27 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                     if len(block_hsingle) == 1:
                         legal_moves[(i, j)] = block_hsingle
                         continue
+<<<<<<< Updated upstream
         """
+=======
+
+        ###################################
+        # execute subgroup-exclusion heuristic #
+        ###################################
+
+>>>>>>> Stashed changes
         print("Legal moves before the prune are: ", legal_moves)
 
         # Check if all indices in a bin are in the same block
         def same_block(bin):
             # print(bin)
+<<<<<<< Updated upstream
             blocks = [(bin_i//self.N//self.n) * self.n + (bin_i % self.N) // self.m for bin_i in bin]
             if(len(set(blocks)) == 1):
+=======
+            blocks = [(bin_i // self.N // self.n) * self.n + (bin_i % self.N) // self.m for bin_i in bin]
+            if (len(set(blocks)) == 1):
+>>>>>>> Stashed changes
                 # print("Found in the same block for bin ", bin)
                 return True
             else:
@@ -132,6 +145,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
 
         # Obtain the list of legal moves for the block that square bin_i is part of
         def get_block_moves(bin_i):
+<<<<<<< Updated upstream
             block = (bin_i//self.N//self.n) * self.n + (bin_i % self.N) // self.m
             first_in_block = game_state.board.f2rc((block//self.n) * self.N * self.n + (block % self.n) * self.m)
             moves = {}
@@ -141,6 +155,88 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
             return moves
 
         # Execute subgroup-exclusion heuristic for the columns
+=======
+            block = (bin_i // self.N // self.n) * self.n + (bin_i % self.N) // self.m
+            first_in_block = game_state.board.f2rc((block // self.n) * self.N * self.n + (block % self.n) * self.m)
+            moves = {}
+            for i in range(self.n):
+                for k in range(self.m):
+                    moves[(first_in_block[0] + i, first_in_block[1] + k)] = (
+                    playable_moves[(first_in_block[0] + i, first_in_block[1] + k)])
+            return moves
+
+        # Execute subgroup-exclusion heuristic for the columns
+        for i in range(self.N):
+            row_moves = [playable_moves[(row, i)] for row in range(self.N)]
+            # print(type(row_moves[0]))
+            # print(row_moves)
+            if len(row_moves) > 1:
+                v_bins = []
+                for v in range(1, self.N + 1):
+                    v_bin = [(i + index * self.N) for index, row in enumerate(row_moves) if v in row
+                             and game_state.board.get(index, i) == SudokuBoard.empty]
+                    v_bins.append(v_bin)
+                for bin_val, bin in enumerate(v_bins):
+                    # print("Checking for bin ", bin_val+1)
+                    if (same_block(bin)):
+                        """ Cross out posibilities """
+                        cross_moves = get_block_moves(bin[0])
+                        # print([key for key in cross_moves])
+                        actual_to_cross = [ind for ind in cross_moves if (game_state.board.rc2f(ind[0], ind[1]))
+                                           not in bin and game_state.board.get(ind[0], ind[1]) == SudokuBoard.empty]
+                        # print("The moves to cross out are ", actual_to_cross)
+                        for index in actual_to_cross:
+                            # print("Pruning out ", index, " moves ")
+                            # print("Before ", legal_moves[index])
+                            # print("Deleting ", {index: {bin_val+1}})
+                            inter = set(playable_moves[index])
+                            inter.discard(bin_val + 1)
+                            legal_moves[index] = inter
+                            # print("After ", legal_moves[index])
+
+        print("SWITCHING TO ROWS")
+
+        # Execute subgroup-exclusion heuristic for the rows
+        for i in range(self.N):
+            row_moves = [playable_moves[(i, row)] for row in range(self.N)]
+            # print(type(row_moves[0]))
+            # print(row_moves)
+            if len(row_moves) > 1:
+                v_bins = []
+                for v in range(1, self.N + 1):
+                    v_bin = [(i * self.N + index) for index, row in enumerate(row_moves) if v in row
+                             and game_state.board.get(i, index) == SudokuBoard.empty]
+                    # print("Bins ", v_bin)
+                    v_bins.append(v_bin)
+                for bin_val, bin in enumerate(v_bins):
+                    # print("Checking for bin ", bin_val + 1)
+                    if (same_block(bin)):
+                        """ Cross out posibilities """
+                        cross_moves = get_block_moves(bin[0])
+                        # print([key for key in cross_moves])
+                        # print("Block moves are ", cross_moves)
+                        actual_to_cross = [ind for ind in cross_moves if
+                                           (game_state.board.rc2f(ind[0], ind[1]))
+                                           not in bin and game_state.board.get(ind[0], ind[
+                                               1]) == SudokuBoard.empty]
+                        # print("The moves to cross out are ", actual_to_cross)
+                        # print("Because bin contained ", bin)
+                        for index in actual_to_cross:
+                            # print("Pruning out ", index, " moves ")
+                            # print("Before ", legal_moves[index])
+                            # print("Deleting ", {index: {bin_val + 1}})
+                            inter = set(playable_moves[index])
+                            inter.discard(bin_val + 1)
+                            legal_moves[index] = inter
+                            # print("After ", legal_moves[index])
+
+        print("Legal moves after the prune are: ", playable_moves)
+
+        ###################################
+        # find all hidden tuples in a row #
+        ###################################
+        # for all rows...
+>>>>>>> Stashed changes
         for i in range(self.N):
                 row_moves = [legal_moves[(row, i)] for row in range(self.N)]
                 # print(type(row_moves[0]))

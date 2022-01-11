@@ -94,6 +94,23 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
     def __init__(self):
         super().__init__()
 
+    def get_splits(self, squares):
+        # split the data into groups representing rows and columns
+        row_split = [squares[x:x + self.N] for x in range(0, len(squares), self.N)]
+        col_split = [itemgetter(*[(self.N * i) + j for i in range(self.N)])(squares) for j in range(self.N)]
+        block_split = [itemgetter(*index)(squares) for index in self.split_indices_block]
+        return row_split, col_split, block_split
+
+    def get_most_common_eight(self, row_split, col_split, block_split):
+        # Find the positions of the missing values in the 8-full rows/cols/blocks and add the indexes to a list
+        where_eights_occur = [self.split_indices_block[blocknr][block.index(0)]
+                              for blocknr, block in enumerate(block_split) if block.count(0) == 1] + \
+                             [rownr * self.N + row.index(0)
+                              for rownr, row in enumerate(row_split) if row.count(0) == 1] + \
+                             [colnr + col.index(0) * self.N
+                              for colnr, col in enumerate(col_split) if col.count(0) == 1]
+        # Find the most occuring index (would be 3 if one missing value can complete a row, col and block)
+        return Counter(where_eights_occur).most_common(1)[0]
 
     # counts the total amount of filled in regions.
     def countfilled(self, squares,leaf):
@@ -103,10 +120,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         The function takes an array of length N*N and computes, when converted to a sudoku board, how many rows, columns
         and blocks don't contain any filled-in values. it returns the sum of the amount of rows, columns and blocks.
         """
-        # split the data into groups representing rows and columns
-        row_split = [squares[x:x + self.N] for x in range(0, len(squares), self.N)]
-        col_split = [itemgetter(*[(self.N * i) + j for i in range(self.N)])(squares) for j in range(self.N)]
-        block_split = [itemgetter(*index)(squares) for index in self.split_indices_block]
+        row_split, col_split, block_split = self.get_splits(squares)
 
         # count all the empty values for each group in the rows, cols and blocks, then take the total of the three.
         nrfilled = sum([[sublist.count(0) for sublist in zone].count(0)
@@ -117,6 +131,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         # Thinking one ply ahead by seeing if the opponent can score and how much given the board
         # Only useful for leaf nodes because in other situations we already analyze what will happen next
         negscore = 0
+
         # count the amount of rows/cols/blocks with exactly 8 values filled in
         row_contains_eight = [sublist.count(0) for sublist in row_split].count(1)
         col_contains_eight = [sublist.count(0) for sublist in col_split].count(1)
@@ -128,15 +143,8 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         if total_eights > 0:
             # if all the 8-fulls are in only the rows,cols or blocks, each index can only occur once so negscore = 1
             if total_eights not in list_total_eights:
-                # Find the positions of the missing values in the 8-full rows/cols/blocks and add the indexes to a list
-                where_eights_occur = [self.split_indices_block[blocknr][block.index(0)]
-                                      for blocknr, block in enumerate(block_split) if block.count(0) == 1] + \
-                                     [rownr*self.N+row.index(0)
-                                      for rownr, row in enumerate(row_split) if row.count(0) == 1] + \
-                                     [colnr+col.index(0)*self.N
-                                      for colnr, col in enumerate(col_split) if col.count(0) == 1]
-                # Find the most occuring index (would be 3 if one missing value can complete a row, col and block)
-                negscore = Counter(where_eights_occur).most_common(1)[0][1]
+                most_common_eight = self.get_most_common_eight(row_split, col_split, block_split)
+                negscore = most_common_eight[1]
             else:
                 negscore = 1
 
@@ -462,10 +470,9 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         #####################
 
         # calculate various additional parameters for each move
-        def calcmove(indice, prev_score, calcsquares):
+        def calcmove(indice, calcsquares):
             """
             @param indice:  where on the sudoku board the move will take place
-            @param prev_score:  the score for the board prior to the move being played
             @param calcsquares: a 1D array of the board before prior to the move being played
             @param calcname: the name of the parent of this node
             @return:
@@ -474,6 +481,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                 calc_children: a list of the moves that can be played after playing this move
             Calculates the state of the board and score after playing a hypothethical move.
             """
+            prev_score = self.countfilled(calcsquares, leaf=False)
             nsquares = calcsquares.copy()
             # -1 is used to denote a move has been played on a square without needing to specify what the number is.
             nsquares[indice] = -1
@@ -482,38 +490,55 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
             scorediff = static_scorediff - negative_score
             return nsquares, scoremap[scorediff], static_scorediff
 
-        # calculate the score for the root position.
-        initial_score = self.countfilled(game_state.board.squares, leaf=False)
-
-
         def get_candidate_node(tag, move):
             name = (f'p{tag}',)
-            squares, points, static_points = calcmove(move[1], initial_score, game_state.board.squares)
+            squares, points, static_points = calcmove(move[1], game_state.board.squares)
+            if points == 0:
+                return None
             return CandidateNode(name, squares, move[0], points, static_points)
 
         # construct a tree as a collection of the direct children of the root node (candidate nodes)
-        tree = {(f'p{nr}',): get_candidate_node(nr, move) for nr, move in enumerate(all_moves)}
+        tree = {}
+        for nr, move in enumerate(all_moves):
+            candidate_node = get_candidate_node(nr, move)
+            if candidate_node:
+                tree[(f'p{nr}',)] = candidate_node
+
+        def propose_most_common_eight_move():
+            row_split, col_split, block_split = self.get_splits(game_state.board.squares)
+            most_common_eight_k = self.get_most_common_eight(row_split, col_split, block_split)[0]
+            i, j = game_state.board.f2rc(most_common_eight_k)
+            value = list(playable_moves[(i, j)])[0]
+            move = Move(i, j, value)
+            self.propose_move(move)
 
         # propose the best candidate node.
-        pmove = max(list(tree.values()), key=operator.attrgetter('eval')).move
-        print(f'd0, proposed move is {pmove}')
-        self.propose_move(pmove)
+        if len(tree) == 0:
+            if passing_exists:
+                self.propose_move(passing_move)
+            else:
+                propose_most_common_eight_move()
+        else:
+            pmove = max(list(tree.values()), key=operator.attrgetter('eval')).move
+            print(f'd0, proposed move is {pmove}')
+            self.propose_move(pmove)
 
         ######################
         # Minimax evaluation #
         ######################
 
-        def update_squares(squares, indice):
-            # for a proposed move on the square at indice, set the value of the indice to be -1
-            sq = squares.copy()
-            sq[indice] = -1
-            return sq
-
-        def find_children(parent):
+        def find_children(parent, greedy):
             # get the children of a node, with name denothing what the path of the node is, and squares the occupied
             # positions on the board.
-            return {parent.name+(i,): Node(parent.name+(i,), update_squares(parent.squares, i))
-                    for i, indice in enumerate(parent.squares) if indice == 0}
+            children = {}
+            for i, value in enumerate(parent.squares):
+                if value != 0:
+                    continue
+                squares, points, static_points = calcmove(i, parent.squares)
+                if points == 0 and greedy:
+                    continue
+                children[parent.name+(i,)] = Node(parent.name+(i,), squares)
+            return children
 
         def delve(list_tree):
             # get all children of the list_tree
@@ -539,7 +564,8 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
 
             # find the children of the leaf nodes and add them to the tree
             for parent in moves.values():
-                parent.children = find_children(parent)
+                parent.children = find_children(parent, greedy=depth % 2 != 0)
+
             # increment the depth
             depth += 1
 
@@ -603,17 +629,23 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                 # uses the static eval because otherwise things go wrong when looking at deeper levels.
                 move.eval = move.static_eval + minimax(move, float('-inf'), float('inf')).score
 
-            pmove = max(list(tree.values()), key=operator.attrgetter('eval'))
-            if pmove.eval < 0 and passing_exists:
-                self.propose_move(passing_move)
-                print('trying to pass')
-            elif pmove.eval == 0 and passing_exists and game_state.board.squares.count(0) % 2 == 1:
-                self.propose_move(passing_move)
-                print('passing to get last move')
+            if len(tree) == 0:
+                if passing_exists:
+                    self.propose_move(passing_move)
+                else:
+                    propose_most_common_eight_move()
             else:
-                self.propose_move(pmove.move)
-                print(f'proposing: {pmove.move}\n with evaluation:{pmove.eval}')
-                print(f'finished depth {depth}')
+                pmove = max(list(tree.values()), key=operator.attrgetter('eval'))
+                if pmove.eval < 0 and passing_exists:
+                    self.propose_move(passing_move)
+                    print('trying to pass')
+                elif pmove.eval == 0 and passing_exists and game_state.board.squares.count(0) % 2 == 1:
+                    self.propose_move(passing_move)
+                    print('passing to get last move')
+                else:
+                    self.propose_move(pmove.move)
+                    print(f'proposing: {pmove.move}\n with evaluation:{pmove.eval}')
+                    print(f'finished depth {depth}')
 
             ##################################################
             # Sorting Tree to increase pruning on next depth #
@@ -626,6 +658,8 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                                 (children of root node)
                 @return: an ordered version of the branch
                 """
+                if len(branch) == 0:
+                    return branch
                 # if the nodes have children, also order the children.
                 if len(list(branch.values())[0].children) != 0:
                     for branch_move in branch.values():

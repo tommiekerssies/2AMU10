@@ -81,9 +81,9 @@ class Leaf_score:
         self.count = count[0]
         # the points the opponent could score if they were to move
         if namelen % 2 == 0:
-            self.score = -scoremap[count[1]]
-        else:
             self.score = scoremap[count[1]]
+        else:
+            self.score = -scoremap[count[1]]
 
 
 class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):

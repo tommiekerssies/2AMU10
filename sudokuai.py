@@ -1,9 +1,10 @@
 from competitive_sudoku.sudoku import GameState, Move, SudokuBoard, TabooMove
 import competitive_sudoku.sudokuai
 from operator import itemgetter
-from collections import Counter
 from itertools import groupby
+from collections import Counter
 import operator
+
 
 #####################
 # for building tree #
@@ -34,13 +35,13 @@ class CandidateNode:
     and an extra parameter static_eval which is the same as eval, but eval updates based on the minimax. However,
     the evaluation of the move on its own is also necessary for some actions.
     """
-    def __init__(self, name, squares, move, evaluation):
+    def __init__(self, name, squares, move, evaluation, static_evaluation):
         self.squares = squares
         self.name = name
         self.children = {}
         self.move = move
         self.eval = evaluation
-        self.static_eval = evaluation
+        self.static_eval = static_evaluation
 
 
 ###############
@@ -48,7 +49,10 @@ class CandidateNode:
 ###############
 
 # maps nr. of completed regions to points scored.
-scoremap = {0: 0,
+scoremap = {-3: -7,
+            -2: -3,
+            -1: -1,
+            0: 0,
             1: 1,
             2: 3,
             3: 7}
@@ -72,9 +76,14 @@ class Leaf_score:
     """
     The same as the Score class, however since the leaf has no child, the score is 0
     """
-    def __init__(self, count):
-        self.count = count
-        self.score = 0
+    def __init__(self, count, namelen):
+        # amount of filled regions
+        self.count = count[0]
+        # the points the opponent could score if they were to move
+        if namelen % 2 == 0:
+            self.score = -scoremap[count[1]]
+        else:
+            self.score = scoremap[count[1]]
 
 
 class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
@@ -85,8 +94,9 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
     def __init__(self):
         super().__init__()
 
+
     # counts the total amount of filled in regions.
-    def countfilled(self, squares):
+    def countfilled(self, squares,leaf):
         """
         @param squares: the squares parameter from the game state
         @return: the total amount of filled columns, rows and blocks
@@ -96,16 +106,41 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         # split the data into groups representing rows and columns
         row_split = [squares[x:x + self.N] for x in range(0, len(squares), self.N)]
         col_split = [itemgetter(*[(self.N * i) + j for i in range(self.N)])(squares) for j in range(self.N)]
+        block_split = [itemgetter(*index)(squares) for index in self.split_indices_block]
 
-        # split the data into groups representing blocks
-        indices_block = [self.N * (j // self.n) + j % self.n + (i * self.n) % self.N + (i // self.m) * self.N * self.m
-                         for i in range(self.N) for j in range(self.N)]
+        # count all the empty values for each group in the rows, cols and blocks, then take the total of the three.
+        nrfilled = sum([[sublist.count(0) for sublist in zone].count(0)
+                        for zone in [row_split, col_split, block_split]])
+        if not leaf:
+            return nrfilled
 
-        split_indices_block = [indices_block[x:x + self.N] for x in range(0, len(indices_block), self.N)]
-        block_split = [itemgetter(*index)(squares) for index in split_indices_block]
+        # Thinking one ply ahead by seeing if the opponent can score and how much given the board
+        # Only useful for leaf nodes because in other situations we already analyze what will happen next
+        negscore = 0
+        # count the amount of rows/cols/blocks with exactly 8 values filled in
+        row_contains_eight = [sublist.count(0) for sublist in row_split].count(1)
+        col_contains_eight = [sublist.count(0) for sublist in col_split].count(1)
+        block_contains_eight = [sublist.count(0) for sublist in block_split].count(1)
+        total_eights = row_contains_eight + col_contains_eight + block_contains_eight
+        list_total_eights = [row_contains_eight, col_contains_eight, block_contains_eight]
 
-        # count all the empty values for each group in the rows, columns and blocks, then take the total of the three.
-        return sum([[sublist.count(0) for sublist in zone].count(0) for zone in [row_split, col_split, block_split]])
+        # find how many points the opponent can score on its next turn based on the position of the 8-fulls
+        if total_eights > 0:
+            # if all the 8-fulls are in only the rows,cols or blocks, each index can only occur once so negscore = 1
+            if total_eights not in list_total_eights:
+                # Find the positions of the missing values in the 8-full rows/cols/blocks and add the indexes to a list
+                where_eights_occur = [self.split_indices_block[blocknr][block.index(0)]
+                                      for blocknr, block in enumerate(block_split) if block.count(0) == 1] + \
+                                     [rownr*self.N+row.index(0)
+                                      for rownr, row in enumerate(row_split) if row.count(0) == 1] + \
+                                     [colnr+col.index(0)*self.N
+                                      for colnr, col in enumerate(col_split) if col.count(0) == 1]
+                # Find the most occuring index (would be 3 if one missing value can complete a row, col and block)
+                negscore = Counter(where_eights_occur).most_common(1)[0][1]
+            else:
+                negscore = 1
+
+        return nrfilled, negscore
 
     def find_legal_moves(self, board):
         """"
@@ -146,19 +181,21 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
         self.N = game_state.board.N
         self.n = game_state.board.n
         self.m = game_state.board.m
+
+        # split the data into groups representing blocks
+        indices_block = [self.N * (j // self.n) + j % self.n + (i * self.n) % self.N + (i // self.m) * self.N * self.m
+                         for i in range(self.N) for j in range(self.N)]
+        self.split_indices_block = [indices_block[x:x + self.N] for x in range(0, len(indices_block), self.N)]
+
         # find all legal moves (according to sudoku rules)
         legal_moves = self.find_legal_moves(board=game_state.board)
 
-        def playable(key, value):
+        def find_playable_moves(key, value):
             if game_state.board.get(key[0], key[1]) != SudokuBoard.empty:
                 return set()
             return set([val for val in value if TabooMove(key[0], key[1], val) not in game_state.taboo_moves])
-        playable_moves = {key: playable(key, value) for key,value in legal_moves.items()}
+        playable_moves = {key: find_playable_moves(key, value) for key, value in legal_moves.items()}
         static_playable_moves = playable_moves.copy()
-
-        #for key, value in legal_moves.items():
-        #    if game_state.board.get(key[0], key[1]) == SudokuBoard.empty:
-        #        values = (val for val in value if TabooMove(key[0], key[1], val) not in game_state.taboo_moves)
 
         ###############
         # Heuristics: #
@@ -197,6 +234,73 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                     if len(block_hsingle) == 1:
                         playable_moves[(i, j)] = block_hsingle
                         continue
+
+        ###################################
+        # execute subgroup-exclusion heuristic #
+        ###################################
+
+        # Check if all indices in a bin are in the same block
+        def same_block(bin):
+            blocks = [(bin_i // self.N // self.n) * self.n + (bin_i % self.N) // self.m for bin_i in bin]
+            if len(set(blocks)) == 1:
+                # print("Found in the same block for bin ", bin)
+                return True
+            else:
+                return False
+
+        # Obtain the list of legal moves for the block that square bin_i is part of
+        def get_block_moves(bin_i):
+            block = (bin_i // self.N // self.n) * self.n + (bin_i % self.N) // self.m
+            first_in_block = game_state.board.f2rc((block // self.n) * self.N * self.n + (block % self.n) * self.m)
+            moves = {}
+            for i in range(self.n):
+                for k in range(self.m):
+                    moves[(first_in_block[0] + i, first_in_block[1] + k)] = (
+                        playable_moves[(first_in_block[0] + i, first_in_block[1] + k)])
+            return moves
+
+        # Execute subgroup-exclusion heuristic for the columns
+        for i in range(self.N):
+            row_moves = [playable_moves[(row, i)] for row in range(self.N)]
+            if len(row_moves) > 1:
+                v_bins = []
+                for v in range(1, self.N + 1):
+                    v_bin = [(i + index * self.N) for index, row in enumerate(row_moves) if v in row
+                             and game_state.board.get(index, i) == SudokuBoard.empty]
+                    v_bins.append(v_bin)
+                for bin_val, bin in enumerate(v_bins):
+                    if (same_block(bin)):
+                        """ Cross out posibilities """
+                        cross_moves = get_block_moves(bin[0])
+                        actual_to_cross = [ind for ind in cross_moves if (game_state.board.rc2f(ind[0], ind[1]))
+                                           not in bin and game_state.board.get(ind[0], ind[1]) == SudokuBoard.empty]
+                        for index in actual_to_cross:
+                            inter = set(playable_moves[index])
+                            inter.discard(bin_val + 1)
+                            legal_moves[index] = inter
+
+        # Execute subgroup-exclusion heuristic for the rows
+        for i in range(self.N):
+            row_moves = [playable_moves[(i, row)] for row in range(self.N)]
+            if len(row_moves) > 1:
+                v_bins = []
+                for v in range(1, self.N + 1):
+                    v_bin = [(i * self.N + index) for index, row in enumerate(row_moves) if v in row
+                             and game_state.board.get(i, index) == SudokuBoard.empty]
+                    v_bins.append(v_bin)
+                for bin_val, bin in enumerate(v_bins):
+                    # print("Checking for bin ", bin_val + 1)
+                    if (same_block(bin)):
+                        """ Cross out posibilities """
+                        cross_moves = get_block_moves(bin[0])
+                        actual_to_cross = [ind for ind in cross_moves if
+                                           (game_state.board.rc2f(ind[0], ind[1]))
+                                           not in bin and game_state.board.get(ind[0], ind[
+                                               1]) == SudokuBoard.empty]
+                        for index in actual_to_cross:
+                            inter = set(playable_moves[index])
+                            inter.discard(bin_val + 1)
+                            legal_moves[index] = inter
 
         ###################################
         # find all hidden tuples in a row #
@@ -310,28 +414,30 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                             playable_moves[block_moves[b_i2][0]] = htuple_candidate
                             break
 
+        #####################
+        # Find passing move #
+        #####################
+        # find the first move that was pruned out by the heuristics and denote it as a passing move
+        # playing this move will result in the sudoku having no solutions allowing the agent to pass a turn
         passing_exists = False
         for move in playable_moves.keys():
-
             if len(static_playable_moves[move] - set(playable_moves[move])) != 0:
                 passing_exists = True
                 passing_move = Move(move[0],move[1], list(static_playable_moves[move] - set(playable_moves[move]))[0])
                 print(passing_move)
                 break
 
-        def possible(i, j, value, game_state):
+        # check for each move if it can be played according to the heuristic
+        def possible(i, j, value):
             return value in playable_moves[(i, j)]
 
-
         # find all non forfeiting moves.
+        # pruned by the heuristics
         all_moves = [(Move(i, j, value), (i * self.N) + j)
                      for i in range(self.N)
                      for j in range(self.N)
                      for value in range(1, self.N + 1)
-                     if possible(i, j, value, game_state)]
-
-
-
+                     if possible(i, j, value)]
 
         ############################
         # Assign most common moves #
@@ -371,17 +477,19 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
             nsquares = calcsquares.copy()
             # -1 is used to denote a move has been played on a square without needing to specify what the number is.
             nsquares[indice] = -1
-            score = self.countfilled(nsquares)
-            scorediff = score - prev_score
-            return nsquares, scoremap[scorediff]
+            score, negative_score = self.countfilled(nsquares, leaf=True)
+            static_scorediff = score - prev_score
+            scorediff = static_scorediff - negative_score
+            return nsquares, scoremap[scorediff], static_scorediff
 
         # calculate the score for the root position.
-        initial_score = self.countfilled(game_state.board.squares)
+        initial_score = self.countfilled(game_state.board.squares, leaf=False)
+
 
         def get_candidate_node(tag, move):
             name = (f'p{tag}',)
-            squares, points = calcmove(move[1], initial_score, game_state.board.squares)
-            return CandidateNode(name, squares, move[0], points)
+            squares, points, static_points = calcmove(move[1], initial_score, game_state.board.squares)
+            return CandidateNode(name, squares, move[0], points, static_points)
 
         # construct a tree as a collection of the direct children of the root node (candidate nodes)
         tree = {(f'p{nr}',): get_candidate_node(nr, move) for nr, move in enumerate(all_moves)}
@@ -451,10 +559,10 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
 
                 # score the leaves
                 if len(movetree.children) == 0:
-                    return Leaf_score(self.countfilled(movetree.squares))
+                    return Leaf_score(self.countfilled(movetree.squares, leaf=True), len(movetree.name))
                 # score the nodes
                 else:
-                    current_score = self.countfilled(movetree.squares)
+                    current_score = self.countfilled(movetree.squares, leaf=False)
                     # name indicates path so its polarity shows whether it is a min or max layer.
                     if len(movetree.name) % 2 == 0:
                         max_node = None

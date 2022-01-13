@@ -81,9 +81,9 @@ class Leaf_score:
         self.count = count[0]
         # the points the opponent could score if they were to move
         if namelen % 2 == 0:
-            self.score = -scoremap[count[1]]
-        else:
             self.score = scoremap[count[1]]
+        else:
+            self.score = -scoremap[count[1]]
 
 
 class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
@@ -110,6 +110,9 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                              [colnr + col.index(0) * self.N
                               for colnr, col in enumerate(col_split) if col.count(0) == 1]
         # Find the most occuring index (would be 3 if one missing value can complete a row, col and block)
+        most_common = Counter(where_eights_occur).most_common(1)
+        if not most_common:
+            return None
         return Counter(where_eights_occur).most_common(1)[0]
 
     # counts the total amount of filled in regions.
@@ -504,20 +507,27 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
             if candidate_node:
                 tree[(f'p{nr}',)] = candidate_node
 
-        def propose_most_common_eight_move():
+        def propose_most_common_eight_else_random_move():
             row_split, col_split, block_split = self.get_splits(game_state.board.squares)
-            most_common_eight_k = self.get_most_common_eight(row_split, col_split, block_split)[0]
-            i, j = game_state.board.f2rc(most_common_eight_k)
-            value = list(playable_moves[(i, j)])[0]
-            move = Move(i, j, value)
-            self.propose_move(move)
+            most_common_eight = self.get_most_common_eight(row_split, col_split, block_split)
+            if most_common_eight:
+                most_common_eight_k = most_common_eight[0]
+                i, j = game_state.board.f2rc(most_common_eight_k)
+                value = list(playable_moves[(i, j)])[0]
+                move = Move(i, j, value)
+                self.propose_move(move)
+            else:
+                for (i,j), random_move_set in playable_moves.items():
+                    random_moves = list(random_move_set)
+                    if len(random_moves) > 0:
+                        self.propose_move(Move(i, j, random_moves[0]))
 
         # propose the best candidate node.
         if len(tree) == 0:
             if passing_exists:
                 self.propose_move(passing_move)
             else:
-                propose_most_common_eight_move()
+                propose_most_common_eight_else_random_move()
         else:
             pmove = max(list(tree.values()), key=operator.attrgetter('eval')).move
             print(f'd0, proposed move is {pmove}')
@@ -633,7 +643,7 @@ class SudokuAI(competitive_sudoku.sudokuai.SudokuAI):
                 if passing_exists:
                     self.propose_move(passing_move)
                 else:
-                    propose_most_common_eight_move()
+                    propose_most_common_eight_else_random_move()
             else:
                 pmove = max(list(tree.values()), key=operator.attrgetter('eval'))
                 if pmove.eval < 0 and passing_exists:
